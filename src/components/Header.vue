@@ -15,9 +15,6 @@
     </div>
     <div class="w-auto block">
       <div class="float-right py-0">
-        <a href="#" class="inline-block text-gray-100 hover:text-blue-300 mr-8">
-          About
-        </a>
         <a
           href="https://github.com/b-inary/odds-calculator"
           class="inline-block text-gray-100 hover:text-blue-300 mr-4"

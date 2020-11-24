@@ -59,9 +59,7 @@
     </div>
 
     <!-- Win rate bar -->
-    <div
-      class="md:container flex items-center justify-center mx-auto mt-6 mb-10"
-    >
+    <div class="md:container flex items-center justify-center mx-auto mt-6">
       <div class="w-1/6 font-semibold">
         <span class="block text-center text-xl">You:</span>
         <span class="block text-center text-2xl">
@@ -71,12 +69,12 @@
       <div class="flex w-1/2 h-4 rounded-2xl justify-between bg-gray-300">
         <div
           class="bg-green-600 rounded-l-2xl win-rate-animation"
-          :class="{ 'rounded-r-2xl': yourWinRate === 1.0 }"
+          :class="{ 'rounded-r-2xl': yourWinRate > 0.99 }"
           :style="{ width: 100 * yourWinRate + '%' }"
         />
         <div
           class="bg-red-600 rounded-r-2xl win-rate-animation"
-          :class="{ 'rounded-l-2xl': oppWinRate === 1.0 }"
+          :class="{ 'rounded-l-2xl': oppWinRate > 0.99 }"
           :style="{ width: 100 * oppWinRate + '%' }"
         />
       </div>
@@ -88,7 +86,15 @@
       </div>
     </div>
 
-    <InputBox :is-used="isUsed" @add-card="addCard($event)" />
+    <!-- Infomation -->
+    <div class="md:container flex items-center justify-center mx-auto mb-6">
+      <div class="flex items-center">
+        <span class="spinner inline-block mr-2" :class="{ hidden: !running }" />
+        <span>{{ message }}</span>
+      </div>
+    </div>
+
+    <InputBox :is-used="isUsed" @add-card="addCard($event)" @clear="clear()" />
   </div>
 </template>
 
@@ -109,30 +115,70 @@ export default defineComponent({
       animationIndices: [],
       isUsed: Array.from({ length: 52 }, () => false),
       usedCards: Array.from({ length: 9 }, () => -1),
+      usedCardsOld: Array.from({ length: 9 }, () => -1),
       yourWinRate: 0.0,
       oppWinRate: 0.0,
       running: false,
     };
   },
 
+  computed: {
+    currentStage: function () {
+      let com_first_empty = this.usedCards.slice(4, 9).indexOf(-1);
+      if (com_first_empty === -1) return "River";
+      if (com_first_empty < 3) return "Pre-flop";
+      if (com_first_empty === 3) return "Flop";
+      return "Turn";
+    },
+
+    message: function () {
+      if (this.running) {
+        return "Computing...";
+      }
+      if (this.usedCards[0] === -1 || this.usedCards[1] === -1) {
+        return "Please input your cards.";
+      }
+      return `[${this.currentStage}] Tie: ${Math.max(
+        100.0 * (1.0 - this.yourWinRate - this.oppWinRate),
+        0.0
+      ).toFixed(2)}%`;
+    },
+  },
+
   watch: {
     usedCards: {
       handler: function () {
-        if (this.isValidInput()) {
-          if (this.running) worker.terminate();
-          this.running = true;
-          worker = new Worker(new URL("../worker", import.meta.url));
-          worker.onmessage = (ev) => {
+        let new_input = this.sanitizeInput(this.usedCards);
+        let old_input = this.sanitizeInput(this.usedCardsOld);
+        this.usedCardsOld = this.usedCards.slice();
+
+        if (new_input.length === 0) {
+          if (this.running) {
             worker.terminate();
             this.running = false;
-            this.yourWinRate = ev.data[0];
-            this.oppWinRate = ev.data[1];
-          };
-          worker.postMessage(Int32Array.from(this.usedCards));
-        } else {
+          }
           this.yourWinRate = 0.0;
           this.oppWinRate = 0.0;
+          return;
         }
+
+        let unchanged =
+          new_input.length === old_input.length &&
+          new_input.every((val, idx) => val === old_input[idx]);
+        console.log(unchanged);
+
+        if (unchanged) return;
+
+        if (this.running) worker.terminate();
+        this.running = true;
+        worker = new Worker(new URL("../worker", import.meta.url));
+        worker.onmessage = (ev) => {
+          worker.terminate();
+          this.running = false;
+          this.yourWinRate = ev.data[0];
+          this.oppWinRate = ev.data[1];
+        };
+        worker.postMessage(new_input);
       },
       deep: true,
     },
@@ -154,22 +200,22 @@ export default defineComponent({
       }
     },
 
-    isValidInput: function () {
-      for (let i = 0; i < 4; ++i) {
-        if (this.usedCards[i] === -1) {
-          return false;
-        }
+    clear: function () {
+      this.isUsed = Array.from({ length: 52 }, () => false);
+      this.usedCards = Array.from({ length: 9 }, () => -1);
+      this.inputPosition = 0;
+    },
+
+    sanitizeInput: function (input) {
+      if (input[0] === -1 || input[1] === -1) {
+        return new Int32Array();
       }
-      let com_first_empty = this.usedCards.slice(4, 9).indexOf(-1);
-      if (com_first_empty === -1 || com_first_empty === 4) {
-        return true;
-      } else if (com_first_empty === 3) {
-        return this.usedCards[8] === -1;
-      } else if (com_first_empty === 0) {
-        return this.usedCards.slice(5, 9).every((val) => val === -1);
-      } else {
-        return false;
-      }
+      let result = Int32Array.from(input);
+      let com_first_empty = input.slice(4, 9).indexOf(-1);
+      if (com_first_empty === -1) return result; // river
+      if (com_first_empty < 3) result.fill(-1, 4); // pre-flop
+      if (com_first_empty === 3) result[8] = -1; // flop
+      return result;
     },
 
     removeCard: function (pos) {
@@ -216,5 +262,75 @@ export default defineComponent({
 
 .win-rate-animation {
   transition: all 0.2s ease-out;
+}
+
+.spinner {
+  text-indent: -9999em;
+  width: 1em;
+  height: 1em;
+  border-radius: 50%;
+  background: #404040;
+  background: -moz-linear-gradient(left, #404040 10%, rgba(64, 64, 64, 0) 42%);
+  background: -webkit-linear-gradient(
+    left,
+    #404040 10%,
+    rgba(64, 64, 64, 0) 42%
+  );
+  background: -o-linear-gradient(left, #404040 10%, rgba(64, 64, 64, 0) 42%);
+  background: -ms-linear-gradient(left, #404040 10%, rgba(64, 64, 64, 0) 42%);
+  background: linear-gradient(to right, #404040 10%, rgba(64, 64, 64, 0) 42%);
+  position: relative;
+  -webkit-animation: spinner-animation 0.8s infinite linear;
+  animation: spinner-animation 0.8s infinite linear;
+  -webkit-transform: translateZ(0);
+  -ms-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+.spinner:before {
+  width: 50%;
+  height: 50%;
+  background: #404040;
+  border-radius: 100% 0 0 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  content: "";
+}
+
+.spinner:after {
+  @apply bg-gray-100;
+  width: 75%;
+  height: 75%;
+  border-radius: 50%;
+  content: "";
+  margin: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+}
+
+@-webkit-keyframes spinner-animation {
+  0% {
+    -webkit-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-animation {
+  0% {
+    -webkit-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
 }
 </style>
