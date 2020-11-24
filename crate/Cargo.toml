@@ -1,0 +1,19 @@
+[package]
+name = "headsup-calc-crate"
+version = "0.1.0"
+authors = ["Wataru Inariba <oinari17@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+wasm-bindgen = "0.2"
+holdem-hand-evaluator = { git = "https://github.com/b-inary/holdem-hand-evaluator", branch = "main" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
+
+[package.metadata.wasm-pack.profile.release]
+# See: https://github.com/rustwasm/wasm-pack/issues/886
+wasm-opt = ["-Oz", "--enable-mutable-globals"]
