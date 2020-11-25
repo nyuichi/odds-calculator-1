@@ -96,23 +96,73 @@
 
     <InputBox :is-used="isUsed" @add-card="addCard($event)" @clear="clear()" />
 
-    <div>
-      <table class="table-auto mt-6 mb-8 mx-auto">
-        <tr v-for="i in Array(13).keys()" :key="`tr-${i}`">
-          <td v-for="j in Array(13).keys()" :key="`td-${i}${j}`">
-            <Hand
-              :key="`hand-${i * 13 + j}`"
-              class="px-1 py-1"
-              :hand-id="i * 13 + j"
-              :selected="selectedHands[i * 13 + j]"
-              @click="selectedHands[i * 13 + j] = !selectedHands[i * 13 + j]"
-            />
-          </td>
-        </tr>
-      </table>
-    </div>
-    <div class="text-2xl font-semibold mx-auto text-center">
-      {{ (ratio * 100).toFixed(2) }}%
+    <div class="md:container flex justify-center mx-auto my-6">
+      <div class="inline-block mr-10">
+        <table class="table-auto mb-8 mx-auto">
+          <tr v-for="i in Array(13).keys()" :key="`hands-tr-${i}`">
+            <td v-for="j in Array(13).keys()" :key="`hands-td-${i * 13 + j}`">
+              <Hand
+                :key="`hand-${i * 13 + j}`"
+                class="px-1 py-1"
+                :hand-id="i * 13 + j"
+                :selected="selectedHands[i * 13 + j]"
+                @click="selectedHands[i * 13 + j] = !selectedHands[i * 13 + j]"
+              />
+            </td>
+          </tr>
+        </table>
+        <div class="text-2xl font-semibold mx-auto text-center">
+          {{ (ratio * 100).toFixed(2) }}%
+        </div>
+      </div>
+      <div class="inline-block">
+        <span class="block text-2xl font-semibold pb-1">Made hands</span>
+        <table class="table-auto mt-6 mb-8 mx-auto">
+          <tr v-for="kind in MADE_HAND_KINDS" :key="`made-hand-tr-${kind}`">
+            <td>{{ kind }}</td>
+            <td class="pl-6 text-right">
+              {{
+                Number.isNaN(madeHandProb[kind])
+                  ? "-"
+                  : (madeHandProb[kind] * 100).toFixed(2) + "%"
+              }}
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div class="inline-block mx-6">
+        <span class="block text-2xl font-semibold pb-1">Draws</span>
+        <table class="table-auto mt-6 mb-8 mx-auto">
+          <tr v-for="kind in DRAW_KINDS" :key="`draw-tr-${kind}`">
+            <td>{{ kind }}</td>
+            <td class="pl-6 text-right">
+              {{
+                Number.isNaN(drawProb[kind])
+                  ? "-"
+                  : (drawProb[kind] * 100).toFixed(2) + "%"
+              }}
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div class="inline-block">
+        <span class="block text-2xl font-semibold pb-1">Combinations</span>
+        <table class="table-auto mt-6 mb-8 mx-auto">
+          <tr
+            v-for="kind in MADE_HAND_DRAW_COMBO_KINDS"
+            :key="`made-hand-draw-combo-tr-${kind}`"
+          >
+            <td>{{ kind }}</td>
+            <td class="pl-6 text-right">
+              {{
+                Number.isNaN(madeHandDrawComboProb[kind])
+                  ? "-"
+                  : (madeHandDrawComboProb[kind] * 100).toFixed(2) + "%"
+              }}
+            </td>
+          </tr>
+        </table>
+      </div>
     </div>
   </div>
 </template>
@@ -124,12 +174,90 @@ import InputBox from "./InputBox.vue";
 import Hand from "./Hand.vue";
 
 let worker;
+let rangeAnalyzer;
+
+function runRangeAnalyzer() {
+  if (this.analyzerRunning) {
+    rangeAnalyzer.terminate();
+    this.analyzerRunning = false;
+  }
+
+  const supported =
+    [2, 3, 7, 8].every((v) => this.usedCards[v] === -1) &&
+    [0, 1, 4, 5, 6].every((v) => this.usedCards[v] !== -1);
+  if (!supported) {
+    for (const key in this.madeHandProb) {
+      this.madeHandProb[key] = NaN;
+    }
+    return;
+  }
+
+  this.analyzerRunning = true;
+  rangeAnalyzer = new Worker(new URL("../range-analyzer", import.meta.url));
+  rangeAnalyzer.onmessage = (ev) => {
+    rangeAnalyzer.terminate();
+    this.analyzerRunning = false;
+    this.madeHandProb["straight flush"] = ev.data[0];
+    this.madeHandProb["quads"] = ev.data[1];
+    this.madeHandProb["full house"] = ev.data[2];
+    this.madeHandProb["flush"] = ev.data[3];
+    this.madeHandProb["straight"] = ev.data[4];
+    this.madeHandProb["trips"] = ev.data[5];
+    this.madeHandProb["two pair"] = ev.data[6];
+    this.madeHandProb["pair"] = ev.data[7];
+    this.madeHandProb["no made hand"] = ev.data[8];
+  };
+  const input = [];
+  input.push(this.usedCards[0]);
+  input.push(this.usedCards[1]);
+  input.push(this.usedCards[4]);
+  input.push(this.usedCards[5]);
+  input.push(this.usedCards[6]);
+  let selected = [];
+  for (let i = 0; i < 13; ++i) {
+    for (let j = 0; j < 13; ++j) {
+      if (this.selectedHands[i * 13 + j]) {
+        selected.push(i * 13 + j);
+      }
+    }
+  }
+  input.push(selected.length);
+  Array.prototype.push.apply(input, selected);
+  rangeAnalyzer.postMessage(Int32Array.from(input));
+}
 
 export default defineComponent({
   name: "Main",
   components: { Card, InputBox, Hand },
 
   data: function () {
+    const MADE_HAND_KINDS = [
+      "straight flush",
+      "quads",
+      "full house",
+      "flush",
+      "straight",
+      "trips",
+      "two pair",
+      // "over pair",
+      // "top pair",
+      // "pocket pair (1/2)",
+      // "middle pair",
+      // "pocket pair (2/3)",
+      // "bottom pair",
+      // "under pair",
+      "pair",
+      // "ace high",
+      "no made hand",
+    ];
+    const DRAW_KINDS = ["flush draw", "OESD", "gutshot", "backdoor flush"];
+    const MADE_HAND_DRAW_COMBO_KINDS = [
+      "flush draw + pair",
+      "flush draw + OESD",
+      "flush draw + gutshot",
+      "OESD + pair",
+      "gutshot + pair",
+    ];
     return {
       inputPosition: 0,
       animationIndices: [],
@@ -140,6 +268,15 @@ export default defineComponent({
       oppWinRate: 0.0,
       running: false,
       selectedHands: Array.from({ length: 169 }, () => false),
+      MADE_HAND_KINDS,
+      DRAW_KINDS,
+      MADE_HAND_DRAW_COMBO_KINDS,
+      madeHandProb: Object.fromEntries(MADE_HAND_KINDS.map((v) => [v, NaN])),
+      drawProb: Object.fromEntries(DRAW_KINDS.map((v) => [v, NaN])),
+      madeHandDrawComboProb: Object.fromEntries(
+        MADE_HAND_DRAW_COMBO_KINDS.map((v) => [v, NaN])
+      ),
+      analyzerRunning: false,
     };
   },
 
@@ -188,6 +325,8 @@ export default defineComponent({
   watch: {
     usedCards: {
       handler: function () {
+        runRangeAnalyzer.bind(this)();
+
         let new_input = this.sanitizeInput(this.usedCards);
         let old_input = this.sanitizeInput(this.usedCardsOld);
         this.usedCardsOld = this.usedCards.slice();
@@ -219,6 +358,12 @@ export default defineComponent({
           this.oppWinRate = ev.data[1];
         };
         worker.postMessage(new_input);
+      },
+      deep: true,
+    },
+    selectedHands: {
+      handler: function () {
+        runRangeAnalyzer.bind(this)();
       },
       deep: true,
     },
