@@ -95,6 +95,25 @@
     </div>
 
     <InputBox :is-used="isUsed" @add-card="addCard($event)" @clear="clear()" />
+
+    <div>
+      <table class="table-auto mt-6 mb-8 mx-auto">
+        <tr v-for="i in Array(13).keys()" :key="`tr-${i}`">
+          <td v-for="j in Array(13).keys()" :key="`td-${i}${j}`">
+            <Hand
+              :key="`hand-${i * 13 + j}`"
+              class="px-1 py-1"
+              :hand-id="i * 13 + j"
+              :selected="selectedHands[i * 13 + j]"
+              @click="selectedHands[i * 13 + j] = !selectedHands[i * 13 + j]"
+            />
+          </td>
+        </tr>
+      </table>
+    </div>
+    <div class="text-2xl font-semibold mx-auto text-center">
+      {{ (ratio * 100).toFixed(2) }}%
+    </div>
   </div>
 </template>
 
@@ -102,12 +121,13 @@
 import { defineComponent } from "vue";
 import Card from "./Card.vue";
 import InputBox from "./InputBox.vue";
+import Hand from "./Hand.vue";
 
 let worker;
 
 export default defineComponent({
   name: "Main",
-  components: { Card, InputBox },
+  components: { Card, InputBox, Hand },
 
   data: function () {
     return {
@@ -119,6 +139,7 @@ export default defineComponent({
       yourWinRate: 0.0,
       oppWinRate: 0.0,
       running: false,
+      selectedHands: Array.from({ length: 169 }, () => false),
     };
   },
 
@@ -142,6 +163,25 @@ export default defineComponent({
         100.0 * (1.0 - this.yourWinRate - this.oppWinRate),
         0.0
       ).toFixed(2)}%`;
+    },
+
+    ratio: function () {
+      let count = 0;
+      for (let i = 0; i < 13; ++i) {
+        for (let j = 0; j < 13; ++j) {
+          const id = i * 13 + j;
+          if (this.selectedHands[id]) {
+            if (i === j) {
+              count += 6;
+            } else if (i < j) {
+              count += 4;
+            } else {
+              count += 12;
+            }
+          }
+        }
+      }
+      return count / 1326;
     },
   },
 
