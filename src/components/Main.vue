@@ -197,15 +197,18 @@ function runRangeAnalyzer() {
   rangeAnalyzer.onmessage = (ev) => {
     rangeAnalyzer.terminate();
     this.analyzerRunning = false;
-    this.madeHandProb["straight flush"] = ev.data[0];
-    this.madeHandProb["quads"] = ev.data[1];
-    this.madeHandProb["full house"] = ev.data[2];
-    this.madeHandProb["flush"] = ev.data[3];
-    this.madeHandProb["straight"] = ev.data[4];
-    this.madeHandProb["trips"] = ev.data[5];
-    this.madeHandProb["two pair"] = ev.data[6];
-    this.madeHandProb["pair"] = ev.data[7];
-    this.madeHandProb["no made hand"] = ev.data[8];
+    const data = Array.from(ev.data);
+    console.log(data);
+    const count = data.shift();
+    this.madeHandProb["straight flush"] = data[0] / count;
+    this.madeHandProb["quads"] = data[1] / count;
+    this.madeHandProb["full house"] = data[2] / count;
+    this.madeHandProb["flush"] = data[3] / count;
+    this.madeHandProb["straight"] = data[4] / count;
+    this.madeHandProb["trips"] = data[5] / count;
+    this.madeHandProb["two pair"] = data[6] / count;
+    this.madeHandProb["pair"] = data[7] / count;
+    this.madeHandProb["no made hand"] = data[8] / count;
   };
   const input = [];
   input.push(this.usedCards[0]);
@@ -223,6 +226,7 @@ function runRangeAnalyzer() {
   }
   input.push(selected.length);
   Array.prototype.push.apply(input, selected);
+  console.log(input);
   rangeAnalyzer.postMessage(Int32Array.from(input));
 }
 
@@ -344,7 +348,6 @@ export default defineComponent({
         let unchanged =
           new_input.length === old_input.length &&
           new_input.every((val, idx) => val === old_input[idx]);
-        console.log(unchanged);
 
         if (unchanged) return;
 

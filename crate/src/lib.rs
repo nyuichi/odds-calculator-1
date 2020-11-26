@@ -23,7 +23,7 @@ pub fn compute_win_rate(used_cards: Box<[i32]>) -> Box<[f64]> {
 }
 
 #[wasm_bindgen]
-pub fn analyze_range(input: Box<[i32]>) -> Box<[f64]> {
+pub fn analyze_range(input: Box<[i32]>) -> Box<[i32]> {
     let hand = Hand::new()
         .add_card(input[0] as usize)
         .add_card(input[1] as usize);
@@ -33,42 +33,59 @@ pub fn analyze_range(input: Box<[i32]>) -> Box<[f64]> {
         .add_card(input[4] as usize);
     let dead = hand + flop;
     let mut range = vec![];
+    let mut h = vec![];
     for index in 0..(input[5] as usize) {
         let n = input[index + 6] as usize;
-        let i = n / 13;
-        let j = n % 13;
+        let i = 12 - n / 13;
+        let j = 12 - n % 13;
         if i == j {
-            for s1 in 0..3usize {
-                for s2 in s1+1..3 {
-                    if (dead.mask & (i * 4 + s1) as u64) == 0 && (dead.mask & (i * 4 + s2) as u64 == 0) {
-                        range.push(Hand::new().add_card(i * 4 + s1).add_card(i * 4 + s2));
+            for s1 in 0..4 {
+                for s2 in s1+1..4 {
+                    let h1 = Hand::new().add_card(i * 4 + s1);
+                    let h2 = Hand::new().add_card(i * 4 + s2);
+                    if (dead.mask & h1.mask) == 0 && (dead.mask & h2.mask) == 0 {
+                        range.push(h1 + h2);
+                        h.push(i * 4 + s1);
+                        h.push(i * 4 + s2);
+                        h.push(get_hand_category((flop + h1 + h2).evaluate()) as usize);
                     }
                 }
             }
         } else if i < j {
             // suited
-            for s in 0..3 {
-                if (dead.mask & (i * 4 + s) as u64) == 0 && (dead.mask & (j * 4 + s) as u64 == 0) {
-                    range.push(Hand::new().add_card(i * 4 + s).add_card(j * 4 + s));
+            for s in 0..4 {
+                let h1 = Hand::new().add_card(i * 4 + s);
+                let h2 = Hand::new().add_card(j * 4 + s);
+                if (dead.mask & h1.mask) == 0 && (dead.mask & h2.mask) == 0 {
+                    range.push(h1 + h2);
+                    h.push(i * 4 + s);
+                    h.push(j * 4 + s);
                 }
             }
         } else {
-            for s1 in 0..3 {
-                for s2 in s1+1..3 {
-                    if (dead.mask & (i * 4 + s1) as u64) == 0 && (dead.mask & (j * 4 + s2) as u64 == 0) {
-                        range.push(Hand::new().add_card(i * 4 + s1).add_card(j * 4 + s2));
+            for s1 in 0..4 {
+                for s2 in s1+1..4 {
+                    let h1 = Hand::new().add_card(i * 4 + s1);
+                    let h2 = Hand::new().add_card(j * 4 + s2);
+                    if (dead.mask & h1.mask) == 0 && (dead.mask & h2.mask) == 0 {
+                        range.push(h1 + h2);
+                        h.push(i * 4 + s1);
+                        h.push(j * 4 + s2);
                     }
-                    if (dead.mask & (i * 4 + s2) as u64) == 0 && (dead.mask & (j * 4 + s1) as u64 == 0) {
-                        range.push(Hand::new().add_card(i * 4 + s2).add_card(j * 4 + s1));
+                    let h1 = Hand::new().add_card(i * 4 + s2);
+                    let h2 = Hand::new().add_card(j * 4 + s1);
+                    if (dead.mask & h1.mask) == 0 && (dead.mask & h2.mask) == 0 {
+                        range.push(h1 + h2);
+                        h.push(i * 4 + s2);
+                        h.push(j * 4 + s1);
                     }
                 }
             }
         }
     }
     let num_range = range.len();
-    println!("num_range: {}", num_range);
     let mut counts = vec![0; 9];
-    for r in range {
+    for r in range.clone() {
         match get_hand_category((flop + r).evaluate()) {
             HandCategory::HighCard => counts[8] += 1,
             HandCategory::OnePair => counts[7] += 1,
@@ -81,5 +98,11 @@ pub fn analyze_range(input: Box<[i32]>) -> Box<[f64]> {
             HandCategory::StraightFlush => counts[0] += 1,
         }
     }
-    counts.into_iter().map(|c| c as f64 / num_range as f64).rev().collect::<Vec<_>>().into_boxed_slice()
+    let mut v = vec![num_range as i32];
+    v.append(&mut counts);
+    let mut w = vec![input[2], input[3], input[4], input[6], input[7]];
+    v.append(&mut w);
+    v.append(&mut h.into_iter().map(|v| v as i32).collect());
+    // counts.into_iter().map(|c| c as f64 / num_range as f64).collect::<Vec<_>>().into_boxed_slice()
+    v.into_boxed_slice()
 }
